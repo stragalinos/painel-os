@@ -171,13 +171,53 @@ Chart.defaults.font.family = "'Segoe UI',system-ui,sans-serif";
 Chart.defaults.color = "#4a5a6e";
 
 // Donut
+const rotuloDonut = {
+  id:"rotuloDonut",
+  afterDatasetsDraw(chart){
+    const {ctx}=chart;
+    const meta=chart.getDatasetMeta(0);
+    ctx.save();
+    ctx.font="700 14px 'Segoe UI',system-ui,sans-serif";
+    ctx.fillStyle="#fff";
+    ctx.textAlign="center";ctx.textBaseline="middle";
+    meta.data.forEach((arc,i)=>{
+      const v=chart.data.datasets[0].data[i];
+      if(v<=0)return;
+      const p=arc.getCenterPoint();
+      ctx.fillText(v.toString().replace(".",",")+"%",p.x,p.y);
+    });
+    ctx.restore();
+  }
+};
 new Chart(document.getElementById("donut"),{
   type:"doughnut",
   data:{labels:["Pendente","Concluído"],datasets:[{data:[STATUS.pendente,STATUS.concluido],backgroundColor:[C.pend,C.conc],borderWidth:2,borderColor:"#fff"}]},
-  options:{cutout:"62%",plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.label+": "+c.raw.toString().replace(".",",")+"%"}}}}
+  options:{cutout:"62%",plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.label+": "+c.raw.toString().replace(".",",")+"%"}}}},
+  plugins:[rotuloDonut]
 });
 
 // Setor (barras horizontais empilhadas)
+const rotuloSetor = {
+  id:"rotuloSetor",
+  afterDatasetsDraw(chart){
+    const {ctx}=chart;
+    ctx.save();
+    ctx.font="700 11px 'Segoe UI',system-ui,sans-serif";
+    ctx.fillStyle="#fff";
+    ctx.textAlign="center";ctx.textBaseline="middle";
+    chart.data.datasets.forEach((ds,di)=>{
+      const meta=chart.getDatasetMeta(di);
+      meta.data.forEach((bar,i)=>{
+        const v=ds.data[i];
+        if(v<=0)return;
+        const inicio=bar.base, fim=bar.x;
+        if(Math.abs(fim-inicio)<16)return; // segmento estreito: não rotula
+        ctx.fillText(v,(inicio+fim)/2,bar.y);
+      });
+    });
+    ctx.restore();
+  }
+};
 new Chart(document.getElementById("setor"),{
   type:"bar",
   data:{labels:SETORES.map(s=>s.nome),datasets:[
@@ -186,8 +226,27 @@ new Chart(document.getElementById("setor"),{
   ]},
   options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,
     scales:{x:{stacked:true,grid:{color:"#eef2f6"}},y:{stacked:true,grid:{display:false}}},
-    plugins:{legend:{display:false}}}
+    plugins:{legend:{display:false}}},
+  plugins:[rotuloSetor]
 });
+
+// Plugin: escreve o valor no fim de cada barra horizontal
+const valorNaBarra = {
+  id:"valorNaBarra",
+  afterDatasetsDraw(chart){
+    const {ctx}=chart;
+    const meta=chart.getDatasetMeta(0);
+    ctx.save();
+    ctx.font="700 12px 'Segoe UI',system-ui,sans-serif";
+    ctx.fillStyle="#12233b";
+    ctx.textBaseline="middle";
+    meta.data.forEach((bar,i)=>{
+      const v=chart.data.datasets[0].data[i];
+      ctx.fillText(" "+v, bar.x+4, bar.y);
+    });
+    ctx.restore();
+  }
+};
 
 // Pendências (com controle Top N)
 let pendChart;
@@ -197,11 +256,13 @@ function renderPend(n){
     type:"bar",
     data:{labels:data.map(d=>d[0]),datasets:[{data:data.map(d=>d[1]),backgroundColor:C.pend,borderRadius:3}]},
     options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,
+      layout:{padding:{right:28}},
       scales:{x:{grid:{color:"#eef2f6"},beginAtZero:true},y:{grid:{display:false}}},
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.raw+" pendência(s)"}}}}
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.raw+" pendência(s)"}}}},
+    plugins:[valorNaBarra]
   };
-  if(pendChart){pendChart.data=cfg.data;pendChart.update();}
-  else pendChart=new Chart(document.getElementById("pend"),cfg);
+  if(pendChart){pendChart.destroy();}
+  pendChart=new Chart(document.getElementById("pend"),cfg);
 }
 renderPend(15);
 document.getElementById("pend-ctrl").addEventListener("click",e=>{
@@ -222,6 +283,23 @@ const metaLine = {
   }
 };
 function corHoras(v){if(v>=100)return C.over;if(v>=80)return C.ok;if(v>=50)return C.warn;return C.crit;}
+// Plugin: escreve o % no fim de cada barra de horas
+const valorHoras = {
+  id:"valorHoras",
+  afterDatasetsDraw(chart){
+    const {ctx}=chart;
+    const meta=chart.getDatasetMeta(0);
+    ctx.save();
+    ctx.font="700 11px 'Segoe UI',system-ui,sans-serif";
+    ctx.fillStyle="#12233b";
+    ctx.textBaseline="middle";
+    meta.data.forEach((bar,i)=>{
+      const v=chart.data.datasets[0].data[i];
+      ctx.fillText(" "+v.toFixed(2).replace(".",",")+"%", bar.x+4, bar.y);
+    });
+    ctx.restore();
+  }
+};
 let horasChart;
 let filtroFaixa="all", filtroSup="__all__";
 function renderHoras(){
@@ -233,12 +311,13 @@ function renderHoras(){
     type:"bar",
     data:{labels:data.map(d=>d[0]),datasets:[{data:data.map(d=>d[1]),backgroundColor:data.map(d=>corHoras(d[1])),borderRadius:3}]},
     options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,
+      layout:{padding:{right:52}},
       scales:{x:{grid:{color:"#eef2f6"},beginAtZero:true,ticks:{callback:v=>v+"%"}},y:{grid:{display:false}}},
       plugins:{legend:{display:false},tooltip:{callbacks:{
         title:c=>c[0].label,
         label:c=>{const it=data[c.dataIndex];const s=it[2]?" · "+it[2]:"";return c.raw.toFixed(2).replace(".",",")+"%"+s;}
       }}}},
-    plugins:[metaLine]
+    plugins:[metaLine,valorHoras]
   };
   if(horasChart)horasChart.destroy();
   horasChart=new Chart(document.getElementById("horas"),cfg);
