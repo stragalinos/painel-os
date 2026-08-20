@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel de Acompanhamento de OS</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --ink:#12233b;
+    --ink-soft:#4a5a6e;
+    --line:#dce3ec;
+    --paper:#f4f6f9;
+    --card:#ffffff;
+    --pend:#d64545;
+    --conc:#2e9e5b;
+    --over:#7b2d8e;
+    --ok:#2e9e5b;
+    --warn:#e8a91d;
+    --crit:#d64545;
+    --accent:#1f6feb;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    background:var(--paper);color:var(--ink);
+    line-height:1.4;padding:24px;
+  }
+  header{
+    display:flex;justify-content:space-between;align-items:flex-end;
+    flex-wrap:wrap;gap:16px;margin-bottom:24px;
+    border-bottom:3px solid var(--ink);padding-bottom:16px;
+  }
+  h1{font-size:26px;font-weight:800;letter-spacing:-.02em}
+  .sub{color:var(--ink-soft);font-size:14px;margin-top:4px}
+  .stamp{
+    font-size:12px;color:var(--ink-soft);text-align:right;
+    text-transform:uppercase;letter-spacing:.08em;
+  }
+  .kpis{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:16px;margin-bottom:24px;
+  }
+  .kpi{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:18px 20px;position:relative;overflow:hidden;
+  }
+  .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--accent)}
+  .kpi.pend::before{background:var(--pend)}
+  .kpi.conc::before{background:var(--conc)}
+  .kpi.crit::before{background:var(--warn)}
+  .kpi .label{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600}
+  .kpi .value{font-size:34px;font-weight:800;margin-top:6px;letter-spacing:-.02em}
+  .kpi .note{font-size:12px;color:var(--ink-soft);margin-top:2px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .panel{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:20px;
+  }
+  .panel h2{font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:16px;color:var(--ink)}
+  .panel.full{grid-column:1 / -1}
+  .chart-wrap{position:relative;height:300px}
+  .chart-wrap.tall{height:640px}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .controls button{
+    font:inherit;font-size:13px;font-weight:600;cursor:pointer;
+    border:1px solid var(--line);background:#fff;color:var(--ink-soft);
+    padding:6px 14px;border-radius:20px;transition:.15s;
+  }
+  .controls button.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .sup-select{font:inherit;font-size:13px;font-weight:600;color:var(--ink);border:1px solid var(--line);border-radius:20px;padding:6px 14px;background:#fff;cursor:pointer}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--ink-soft);margin-top:12px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:12px;height:12px;border-radius:3px;display:inline-block}
+  footer{margin-top:24px;font-size:12px;color:var(--ink-soft);text-align:center}
+  .faixa-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:12px;color:var(--ink-soft)}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Painel de Acompanhamento de OS</h1>
+    <div class="sub">Manutenção · Status, retorno por setor e produtividade por colaborador</div>
+  </div>
+  <div class="stamp" id="stamp"></div>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><div class="label">Total de OS</div><div class="value" id="k-total">0</div><div class="note">no período</div></div>
+  <div class="kpi pend"><div class="label">Pendentes</div><div class="value" id="k-pend">0</div><div class="note" id="k-pend-pct">—</div></div>
+  <div class="kpi conc"><div class="label">Concluídas</div><div class="value" id="k-conc">0</div><div class="note" id="k-conc-note">do total</div></div>
+  <div class="kpi crit"><div class="label">Abaixo da meta (80%)</div><div class="value" id="k-abaixo">0</div><div class="note">colaboradores em horas</div></div>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <h2>Status Geral das OS</h2>
+    <div class="chart-wrap" style="height:280px"><canvas id="donut"></canvas></div>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--pend)"></i>Pendente</span>
+      <span><i class="dot" style="background:var(--conc)"></i>Concluído</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Retorno por Setor</h2>
+    <div class="chart-wrap"><canvas id="setor"></canvas></div>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--conc)"></i>Concluído</span>
+      <span><i class="dot" style="background:var(--pend)"></i>Pendente</span>
+    </div>
+  </div>
+
+  <div class="panel full">
+    <h2>Pendências por Colaborador</h2>
+    <div class="controls" id="pend-ctrl">
+      <button data-n="10">Top 10</button>
+      <button data-n="15" class="active">Top 15</button>
+      <button data-n="99">Todos</button>
+    </div>
+    <div class="chart-wrap tall"><canvas id="pend"></canvas></div>
+  </div>
+
+  <div class="panel full" id="painel-horas">
+    <h2>Apropriação de Horas por Colaborador</h2>
+    <div class="faixa-legend">
+      <span><i class="dot" style="background:var(--over)"></i>≥ 100%</span>
+      <span><i class="dot" style="background:var(--ok)"></i>80–100% (meta)</span>
+      <span><i class="dot" style="background:var(--warn)"></i>50–80%</span>
+      <span><i class="dot" style="background:var(--crit)"></i>Abaixo de 50%</span>
+      <span>| Linha vermelha = meta 80%</span>
+    </div>
+    <div class="controls" id="horas-ctrl">
+      <select id="sup-sel" class="sup-select"><option value="__all__">Todos os supervisores</option></select>
+      <button data-f="all" class="active">Todos</button>
+      <button data-f="abaixo">Abaixo da meta</button>
+      <button data-f="acima">Acima de 100%</button>
+    </div>
+    <div class="chart-wrap tall"><canvas id="horas"></canvas></div>
+  </div>
+</div>
+
+<footer>Painel gerado a partir dos relatórios de OS e apropriação de horas. Atualize os dados no bloco DATA do arquivo.</footer>
+
+<script>
+// ===== DADOS INJETADOS AUTOMATICAMENTE — não editar à mão =====
+const STATUS = {"pendente": 65.9, "concluido": 34.1};
+const TOTAIS = {"total": 461, "pend": 304, "conc": 157};
+const SETORES = [{"nome": "AREA FRIA", "concluido": 100, "pendente": 48}, {"nome": "AREA QUENTE", "concluido": 0, "pendente": 99}, {"nome": "AREA EXTERNA", "concluido": 14, "pendente": 57}, {"nome": "PCM", "concluido": 29, "pendente": 29}, {"nome": "SALA DE MAQUINAS", "concluido": 3, "pendente": 39}, {"nome": "MEIO AMBIENTE", "concluido": 2, "pendente": 0}];
+const PENDENCIAS = [["SAMUEL RODRIGUES DOS SANTOS", 44], ["EQUIPE OPERAÇÃO SALA DE MAQUINAS", 34], ["INSPETOR ROTA", 32], ["GILMAR CUNHA DA SILVA", 29], ["JEAN SILVA DE SOUZA", 27], ["WILSON CAITANO DE ANDRADE", 17], ["ALAN RAMOS MENEZES", 16], ["LUCAS HENRIQUE DA SILVA ALMEIDA", 15], ["MATEUS ANTONIO DE OLIVEIRA", 13], ["CARLOS RAFAEL PRIORI", 12], ["NATAN PEREIRA LEITE", 10], ["JULIO CESAR PEREIRA RIBEIRO", 10], ["ALEX SANDRO DOS SANTOS LIMA", 9], ["KLEITON FERREIRA DE MENEZES", 7], ["FERNANDO HENRIQUE DE LIMA", 6], ["ELEILTON TIMOTEO OLIVEIRA", 5], ["JAIR DOS SANTOS", 5], ["RICARDO MAMEDE DE ARAUJO", 4], ["GUILHERME CARDOSO LEÃO", 3], ["MANOEL VIANA SILVA", 3], ["EDSON DO AMARAL ANTUNES", 2], ["RIKCLEY REINALDO MARTINEZ", 1]];
+const HORAS = [["EDSON DO AMARAL ANTUNES", 151.32, "DULCEZ"], ["RAFAEL SOUZA SILVA", 141.18, "DULCEZ"], ["GUILHERME CARDOSO LEAO", 138.99, "DULCEZ"], ["SILVIO RIBEIRO", 125.62, "EDUARDO"], ["MANOEL VIANA SILVA", 121.86, "DULCEZ"], ["JAIR DOS SANTOS", 112.71, "ADILSON"], ["MARCELO ETSUO KOBAYASHI", 111.88, "DULCEZ"], ["DALTON GERMANO ARKERALE KIDAMARIS FERREIRA", 107.45, "EDUARDO"], ["MARCOS ANTONIO DA SILVA CORDEIRO", 105.59, "DULCEZ"], ["GILMAR CUNHA DA SILVA", 101.04, "VINICIUS"], ["FERNANDO HENRIQUE DE LIMA", 98.66, "ADILSON"], ["ELEILTON TIMOTEO OLIVEIRA", 98.56, "EDUARDO"], ["ALAN RAMOS MENEZES", 96.99, "EDUARDO"], ["MATEUS ANTONIO DE OLIVEIRA", 95.31, "DULCEZ"], ["WILSON CAITANO DE ANDRADE", 92.42, "EDUARDO"], ["LUCAS HENRIQUE DA SILVA ALMEIDA", 88.86, "ADILSON"], ["JULIO CESAR PEREIRA RIBEIRO", 88.06, "ADILSON"], ["GABRIEL HENRYKE DE OLIVEIRA CABRAL", 84.21, "DULCEZ"], ["JORDI RIBEIRO MOREIRA", 83.46, "DULCEZ"], ["RICARDO MAMEDE DE ARAUJO", 78.76, "CRISTIANO"], ["ALEXSANDRO DE CARVALHO", 77.92, "DULCEZ"], ["KAIQUE FERREIRA DE MENEZES", 77.54, "EDUARDO"], ["SAMUEL RODRIGUES DOS SANTOS", 73.41, "EDUARDO"], ["HENRIQUE TEIXEIRA LEAO", 70.64, "ADILSON"], ["PEDRO HENRIQUE DE LIRA", 67.66, "EDUARDO"], ["JEAN DA SILVA DE SOUZA", 67.55, "DULCEZ"], ["CARLOS RAFAEL DA SILVA PRIORI", 66.08, "ADILSON"], ["NATAN PEREIRA LEITE", 11.9, "EDUARDO"], ["KLEITON FERREIRA DE MENEZES", 6.91, "EDUARDO"], ["ALEX SANDRO DOS SANTOS LIMA", 0.0, "ADILSON"]];
+// ===== FIM DOS DADOS =====
+
+// ===== KPIs =====
+const totalOS   = (typeof TOTAIS!=="undefined") ? TOTAIS.total : SETORES.reduce((s,x)=>s+x.concluido+x.pendente,0);
+const totalPend = (typeof TOTAIS!=="undefined") ? TOTAIS.pend  : SETORES.reduce((s,x)=>s+x.pendente,0);
+const totalConc = (typeof TOTAIS!=="undefined") ? TOTAIS.conc  : SETORES.reduce((s,x)=>s+x.concluido,0);
+const abaixoMeta = HORAS.filter(h=>h[1]<80).length;
+
+document.getElementById("k-total").textContent = totalOS;
+document.getElementById("k-pend").textContent = totalPend;
+document.getElementById("k-pend-pct").textContent = STATUS.pendente.toString().replace(".",",")+"% do total";
+document.getElementById("k-conc").textContent = totalConc;
+document.getElementById("k-conc-note").textContent = STATUS.concluido.toString().replace(".",",")+"% do total";
+document.getElementById("k-abaixo").textContent = HORAS.length ? abaixoMeta : "—";
+document.getElementById("stamp").textContent = "Gerado em "+new Date().toLocaleDateString("pt-BR");
+
+const C = {pend:"#d64545",conc:"#2e9e5b",over:"#7b2d8e",ok:"#2e9e5b",warn:"#e8a91d",crit:"#d64545"};
+Chart.defaults.font.family = "'Segoe UI',system-ui,sans-serif";
+Chart.defaults.color = "#4a5a6e";
+
+// Donut
+new Chart(document.getElementById("donut"),{
+  type:"doughnut",
+  data:{labels:["Pendente","Concluído"],datasets:[{data:[STATUS.pendente,STATUS.concluido],backgroundColor:[C.pend,C.conc],borderWidth:2,borderColor:"#fff"}]},
+  options:{cutout:"62%",plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.label+": "+c.raw.toString().replace(".",",")+"%"}}}}
+});
+
+// Setor (barras horizontais empilhadas)
+new Chart(document.getElementById("setor"),{
+  type:"bar",
+  data:{labels:SETORES.map(s=>s.nome),datasets:[
+    {label:"Concluído",data:SETORES.map(s=>s.concluido),backgroundColor:C.conc},
+    {label:"Pendente",data:SETORES.map(s=>s.pendente),backgroundColor:C.pend}
+  ]},
+  options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,
+    scales:{x:{stacked:true,grid:{color:"#eef2f6"}},y:{stacked:true,grid:{display:false}}},
+    plugins:{legend:{display:false}}}
+});
+
+// Pendências (com controle Top N)
+let pendChart;
+function renderPend(n){
+  const data = PENDENCIAS.slice(0,n);
+  const cfg={
+    type:"bar",
+    data:{labels:data.map(d=>d[0]),datasets:[{data:data.map(d=>d[1]),backgroundColor:C.pend,borderRadius:3}]},
+    options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,
+      scales:{x:{grid:{color:"#eef2f6"},beginAtZero:true},y:{grid:{display:false}}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.raw+" pendência(s)"}}}}
+  };
+  if(pendChart){pendChart.data=cfg.data;pendChart.update();}
+  else pendChart=new Chart(document.getElementById("pend"),cfg);
+}
+renderPend(15);
+document.getElementById("pend-ctrl").addEventListener("click",e=>{
+  if(e.target.tagName!=="BUTTON")return;
+  document.querySelectorAll("#pend-ctrl button").forEach(b=>b.classList.remove("active"));
+  e.target.classList.add("active");
+  renderPend(+e.target.dataset.n);
+});
+
+// Horas (cor por faixa + linha de meta)
+const metaLine = {
+  id:"metaLine",
+  afterDraw(chart){
+    const {ctx,chartArea:{top,bottom},scales:{x}}=chart;
+    const px=x.getPixelForValue(80);
+    ctx.save();ctx.beginPath();ctx.moveTo(px,top);ctx.lineTo(px,bottom);
+    ctx.lineWidth=2;ctx.strokeStyle="#e11d1d";ctx.stroke();ctx.restore();
+  }
+};
+function corHoras(v){if(v>=100)return C.over;if(v>=80)return C.ok;if(v>=50)return C.warn;return C.crit;}
+let horasChart;
+let filtroFaixa="all", filtroSup="__all__";
+function renderHoras(){
+  let data=HORAS;
+  if(filtroSup!=="__all__")data=data.filter(h=>(h[2]||"—")===filtroSup);
+  if(filtroFaixa==="abaixo")data=data.filter(h=>h[1]<80);
+  if(filtroFaixa==="acima")data=data.filter(h=>h[1]>100);
+  const cfg={
+    type:"bar",
+    data:{labels:data.map(d=>d[0]),datasets:[{data:data.map(d=>d[1]),backgroundColor:data.map(d=>corHoras(d[1])),borderRadius:3}]},
+    options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,
+      scales:{x:{grid:{color:"#eef2f6"},beginAtZero:true,ticks:{callback:v=>v+"%"}},y:{grid:{display:false}}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{
+        title:c=>c[0].label,
+        label:c=>{const it=data[c.dataIndex];const s=it[2]?" · "+it[2]:"";return c.raw.toFixed(2).replace(".",",")+"%"+s;}
+      }}}},
+    plugins:[metaLine]
+  };
+  if(horasChart)horasChart.destroy();
+  horasChart=new Chart(document.getElementById("horas"),cfg);
+}
+if(!HORAS.length){
+  document.getElementById("painel-horas").style.display="none";
+}else{
+  // popular seletor de supervisores (se houver 3º campo nos dados)
+  const sups=[...new Set(HORAS.map(h=>h[2]).filter(Boolean))].sort();
+  const sel=document.getElementById("sup-sel");
+  if(sups.length){
+    sups.forEach(s=>{const o=document.createElement("option");o.value=s;o.textContent=s;sel.appendChild(o);});
+    sel.addEventListener("change",()=>{filtroSup=sel.value;renderHoras();});
+  }else{
+    sel.style.display="none";
+  }
+  renderHoras();
+}
+document.getElementById("horas-ctrl").addEventListener("click",e=>{
+  if(e.target.tagName!=="BUTTON")return;
+  document.querySelectorAll("#horas-ctrl button").forEach(b=>b.classList.remove("active"));
+  e.target.classList.add("active");
+  filtroFaixa=e.target.dataset.f;
+  renderHoras();
+});
+</script>
+</body>
+</html>
